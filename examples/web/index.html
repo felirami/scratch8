@@ -3,61 +3,121 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SCRATCH-8 — Web Runner (thin Canvas demo)</title>
+  <title>SCRATCH-8 — Fantasy Console</title>
   <style>
-    body { font-family: monospace; background: #111; color: #0f0; margin: 0; padding: 10px; }
-    canvas { image-rendering: pixelated; border: 4px solid #0f0; background: #000; }
-    .controls { margin: 8px 0; }
-    button { font-family: monospace; background: #222; color: #0f0; border: 1px solid #0f0; padding: 4px 8px; margin: 2px; cursor: pointer; }
-    button:hover { background: #0f0; color: #000; }
-    .status { color: #ff0; min-height: 1.2em; }
-    pre { background: #000; padding: 8px; border: 1px solid #333; overflow: auto; }
-    .hint { color: #888; font-size: 0.9em; }
+    :root { --green:#0f0; --bg:#0a0a0a; --fg:#ddd; }
+    body { font-family: ui-monospace, monospace, sans-serif; background: var(--bg); color: var(--fg); margin:0; padding:0; line-height:1.5; }
+    .header { background:#111; border-bottom:3px solid var(--green); padding:16px 20px; }
+    .header h1 { margin:0; font-size:28px; color:var(--green); letter-spacing:2px; }
+    .header .tag { color:#888; font-size:14px; }
+    .container { max-width:960px; margin:0 auto; padding:20px; }
+    canvas { image-rendering: pixelated; border:4px solid var(--green); background:#000; display:block; margin:12px 0; box-shadow:0 0 0 4px #222; }
+    .controls { margin:12px 0; display:flex; flex-wrap:wrap; gap:6px; }
+    button { font-family:inherit; background:#111; color:var(--green); border:1px solid var(--green); padding:6px 12px; cursor:pointer; font-size:13px; }
+    button:hover { background:var(--green); color:#000; }
+    .status { color:#ff0; margin-left:8px; align-self:center; font-size:13px; }
+    .section { margin:32px 0; }
+    .games { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .game { background:#111; border:1px solid #222; padding:12px; font-size:13px; }
+    .game h3 { margin:0 0 6px; color:var(--green); font-size:15px; }
+    .hint { color:#888; font-size:12px; }
+    pre { background:#000; padding:12px; border:1px solid #222; overflow:auto; font-size:12px; }
+    a { color:var(--green); }
+    .footer { margin-top:48px; padding-top:16px; border-top:1px solid #222; color:#666; font-size:12px; }
+    .retro { color:#0f0; }
   </style>
 </head>
 <body>
-  <h1>SCRATCH-8 Web (wasm32-unknown-unknown + Canvas)</h1>
-  <p>
-    Thin web runner for the portable core. Uses only the raw FFI exports (s8_ffi_*) from the lib compiled to wasm.
-    No wasm-bindgen / bindgen-shims in v1 — maximum portability alignment.
-  </p>
-
-  <div class="controls">
-    <button id="btn0">Demo 0: BOUNCER</button>
-    <button id="btn1">Demo 1: PAINTER</button>
-    <button id="btn2">Demo 2: PARTICLES</button>
-    <button id="btn-audio" title="Future: Web Audio worklet for chiptune">Audio (stub)</button>
-    <span class="status" id="status">Loading...</span>
+  <div class="header">
+    <div class="container">
+      <h1>SCRATCH-8</h1>
+      <div class="tag">a fantasy console built from the very scratch • 128×128 • 16 colors • chiptune PSG • .s8 carts • runs on any chip</div>
+    </div>
   </div>
 
-  <canvas id="canvas" width="128" height="128"></canvas>
-  <div class="hint">Click canvas to focus. Arrows + Z/X (or mouse buttons for painter) • 1/2/3 keys also switch • E/S on desktop exports .s8</div>
+  <div class="container">
 
-  <h3>How to build &amp; run this (first steps toward web + shareable carts)</h3>
-  <pre>
-# 1. Add the wasm target (once)
-rustup target add wasm32-unknown-unknown
+    <div class="section">
+      <p><strong>Play right now in your browser.</strong> Same core that powers the desktop version and cross-compiles to embedded (no_std, wasm32, Cortex-M, RISC-V…).</p>
+      <div class="controls">
+        <button id="btn0">BOUNCER</button>
+        <button id="btn1">PAINTER</button>
+        <button id="btn2">PARTICLES</button>
+        <button id="btn3" title="Full chiptune engine (envelopes, vibrato, patterns, sfx)">CHIPTUNE</button>
+        <span class="status" id="status">Loading wasm…</span>
+      </div>
+      <canvas id="canvas" width="128" height="128"></canvas>
+      <div class="hint">Arrows / WASD + Z/X (or mouse). 1/2/3/4 also switch. Real Cart logic running in WebAssembly.</div>
+    </div>
 
-# 2. Build the core lib for wasm (no host crates)
-cargo build --target wasm32-unknown-unknown --lib --no-default-features
+    <div class="section">
+      <h2 style="color:#0f0;font-size:18px;margin:0 0 8px">The games (all using the exact same portable core)</h2>
+      <div class="games">
+        <div class="game">
+          <h3>Bouncer</h3>
+          <div>Classic bouncing ball that changes color and plays a chiptune blip on every wall hit.</div>
+        </div>
+        <div class="game">
+          <h3>Painter</h3>
+          <div>Draw with the mouse. Trails + live pget scanner. Perfect for showing the 16-color palette and input.</div>
+        </div>
+        <div class="game">
+          <h3>Particles</h3>
+          <div>Gravity fountain. Hold Z/X or wait — the engine spawns and the particles have real velocity + decay.</div>
+        </div>
+        <div class="game">
+          <h3>Chiptune Demo ★</h3>
+          <div>16-step multi-channel pattern (pulse lead + bass + drums) at 128 BPM + vibrato + interactive sfx. The full PSG (4 channels, envelopes, LFSR noise, slide, play_pattern) is running live inside the wasm.</div>
+          <div style="margin-top:6px;font-size:11px;color:#666">Best experienced in the desktop build (real cpal output + full sfx bank on Z/X).</div>
+        </div>
+      </div>
+      <p class="hint">Pong and Snake are also in the repo as complete from-scratch examples (AABB physics, grid snake, btnp direction buffering, scoring, win conditions — all using only the public Console + Cart API). Run them locally with <code>cargo run --example pong</code>.</p>
+    </div>
 
-# 3. Copy the artifact next to this HTML (debug is fine for now)
-cp target/wasm32-unknown-unknown/debug/scratch8.wasm .
+    <div class="section">
+      <h2 style="color:#0f0;font-size:18px">Get the real thing</h2>
+      <pre>
+# Desktop (full chiptune audio + .s8 export on E/S)
+cargo run --release --features full
 
-# 4. Serve (any static server; browser file:// may block fetch for wasm)
-python -m http.server 8080
-# Then open http://localhost:8080
+# Build your own carts
+cargo run --example pong
+cargo run --example snake
 
-# Later with audio feature or full web support you may use:
-# cargo build --target wasm32-unknown-unknown --lib --features wasm
-  </pre>
+# Or just the core (no_std / embedded friendly)
+cargo build --target thumbv7em-none-eabihf --no-default-features
+      </pre>
+      <p>
+        <a href="https://github.com/felirami/scratch8" target="_blank" rel="noopener">Source on GitHub</a>
+        • <a href="https://github.com/felirami/scratch8/blob/master/README.md" target="_blank" rel="noopener">README + controls</a>
+        • <a href="https://github.com/felirami/scratch8/blob/master/TUTORIAL.md" target="_blank" rel="noopener">Tutorial: your first cart in 15 minutes</a>
+        • <a href="https://github.com/felirami/scratch8/blob/master/docs/HARDWARE.md" target="_blank" rel="noopener">Exact hardware spec</a>
+      </p>
+    </div>
 
-  <p class="hint">
-    The .s8 cartridge export (press E/S in the desktop runner) produces real files today.
-    Future: drop a .s8 (or its inner .wasm) here and the runner will load carts dynamically.
-    This is the beginning of "compile once, run anywhere" via WASM carts + .s8 wrapper (see GOALS.md + src/carts/mod.rs + lib.rs FFI notes).
-  </p>
+    <div class="section">
+      <h2 style="color:#0f0;font-size:18px">.s8 cartridges &amp; "compile once, run anywhere"</h2>
+      <p>In the desktop runner press <strong>E</strong> or <strong>S</strong> to export the current game as a real <code>.s8</code> file (magic header + name + sections for code/gfx/sfx/meta). Future web / embedded runtimes will load them directly or extract the inner WASM payload for true WASM carts.</p>
+      <p class="hint">The same binary that runs in this browser also cross-compiles to bare-metal microcontrollers. All the drawing, the PSG synthesis, the Cart logic — pure Rust, no external game engines.</p>
+    </div>
+
+    <div class="footer">
+      Built from the very scratch by a Grok agent swarm. 128×128 • 16 colors • 4-channel chiptune • no_std + wasm32 + embedded • MIT/Apache.
+      <br>Deployed on Vercel • Source at <a href="https://github.com/felirami/scratch8">github.com/felirami/scratch8</a>
+    </div>
+
+  </div>
 
   <script src="runner.js"></script>
+  <script>
+    // Tiny enhancement: make the 4th button actually try demo id 3 (Chiptune) if the wasm supports it
+    (function(){
+      const b = document.getElementById('btn3');
+      if (b) b.onclick = () => {
+        if (window.switchDemo) window.switchDemo(3);
+        else if (typeof switchDemo === 'function') switchDemo(3);
+      };
+    })();
+  </script>
 </body>
 </html>
