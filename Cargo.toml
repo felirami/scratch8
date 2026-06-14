@@ -1,0 +1,47 @@
+[package]
+name = "scratch8"
+version = "0.1.0"
+edition = "2024"
+description = "SCRATCH-8 — a complete fantasy console built from the very scratch. 128x128@16 colors, pure-Rust primitives, chiptune PSG, editors, portable to any chip (no_std + WASM + embedded)."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourname/scratch8" # update when real
+
+[features]
+default = ["desktop"]
+# "std" is a marker feature. The library crate is *always* #![no_std] (with
+# alloc). Desktop/wasm bins and any future std-only test helpers opt into it.
+# This keeps the portable core identical across all targets.
+std = []
+desktop = ["std", "dep:minifb", "dep:cpal", "audio"]  # desktop runner + cpal audio output + chiptune synth
+wasm = ["std", "audio"]                                  # wasm32-unknown-unknown + web-sys (added in wasm build)
+embedded = []                                   # bare metal / no_std targets
+audio = []                                      # pure software chiptune PSG core (no_std + alloc friendly; synthesis, AudioMixer, tone/sfx/patterns).
+                                                  # Host audio output (cpal etc) can be enabled together with "std"/"desktop".
+full = ["desktop", "audio"]                     # everything for development (includes audio)
+
+[lib]
+name = "scratch8"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]  # cdylib for clean wasm32 browser builds (exposes the s8_ffi_* no_mangle symbols); rlib for native/desktop
+
+[[bin]]
+name = "scratch8"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[dependencies]
+# Core is intentionally tiny. Only pull host I/O crates behind features.
+minifb = { version = "0.28", optional = true }
+cpal = { version = "0.15", optional = true }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+# For embedded / WASM we will add target-specific profiles later.
+# Cross targets we care about (verified via scripts):
+# - x86_64 / aarch64 desktop
+# - wasm32-unknown-unknown
+# - thumbv7em-none-eabihf (Cortex-M4F etc.)
+# - riscv32imac-unknown-none-elf

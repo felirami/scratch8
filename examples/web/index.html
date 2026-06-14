@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCRATCH-8 — Web Runner (thin Canvas demo)</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #0f0; margin: 0; padding: 10px; }
+    canvas { image-rendering: pixelated; border: 4px solid #0f0; background: #000; }
+    .controls { margin: 8px 0; }
+    button { font-family: monospace; background: #222; color: #0f0; border: 1px solid #0f0; padding: 4px 8px; margin: 2px; cursor: pointer; }
+    button:hover { background: #0f0; color: #000; }
+    .status { color: #ff0; min-height: 1.2em; }
+    pre { background: #000; padding: 8px; border: 1px solid #333; overflow: auto; }
+    .hint { color: #888; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>SCRATCH-8 Web (wasm32-unknown-unknown + Canvas)</h1>
+  <p>
+    Thin web runner for the portable core. Uses only the raw FFI exports (s8_ffi_*) from the lib compiled to wasm.
+    No wasm-bindgen / bindgen-shims in v1 — maximum portability alignment.
+  </p>
+
+  <div class="controls">
+    <button id="btn0">Demo 0: BOUNCER</button>
+    <button id="btn1">Demo 1: PAINTER</button>
+    <button id="btn2">Demo 2: PARTICLES</button>
+    <button id="btn-audio" title="Future: Web Audio worklet for chiptune">Audio (stub)</button>
+    <span class="status" id="status">Loading...</span>
+  </div>
+
+  <canvas id="canvas" width="128" height="128"></canvas>
+  <div class="hint">Click canvas to focus. Arrows + Z/X (or mouse buttons for painter) • 1/2/3 keys also switch • E/S on desktop exports .s8</div>
+
+  <h3>How to build &amp; run this (first steps toward web + shareable carts)</h3>
+  <pre>
+# 1. Add the wasm target (once)
+rustup target add wasm32-unknown-unknown
+
+# 2. Build the core lib for wasm (no host crates)
+cargo build --target wasm32-unknown-unknown --lib --no-default-features
+
+# 3. Copy the artifact next to this HTML (debug is fine for now)
+cp target/wasm32-unknown-unknown/debug/scratch8.wasm .
+
+# 4. Serve (any static server; browser file:// may block fetch for wasm)
+python -m http.server 8080
+# Then open http://localhost:8080
+
+# Later with audio feature or full web support you may use:
+# cargo build --target wasm32-unknown-unknown --lib --features wasm
+  </pre>
+
+  <p class="hint">
+    The .s8 cartridge export (press E/S in the desktop runner) produces real files today.
+    Future: drop a .s8 (or its inner .wasm) here and the runner will load carts dynamically.
+    This is the beginning of "compile once, run anywhere" via WASM carts + .s8 wrapper (see GOALS.md + src/carts/mod.rs + lib.rs FFI notes).
+  </p>
+
+  <script src="runner.js"></script>
+</body>
+</html>

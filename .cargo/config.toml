@@ -1,0 +1,15 @@
+# SCRATCH-8 cross-compilation helpers
+# These targets represent "any chip" we care about.
+# After edits by Portability Engineer: core + new Host trait verified clean on all three.
+
+[build]
+# Default is host. Use `cargo check --target ...` explicitly.
+
+[target.thumbv7em-none-eabihf]
+# For Cortex-M4F etc. (common "chip")
+rustflags = ["-C", "target-cpu=cortex-m4"]
+
+[target.riscv32imac-unknown-none-elf]
+rustflags = ["-C", "target-cpu=generic-rv32"]
+
+# For WASM we usually do `cargo build --target wasm32-unknown-unknown --features wasm`
