@@ -13,13 +13,14 @@
 //   symbols we can provide from here (or the runtime), export its own update fn, and we
 //   would call it instead of the builtin FFI dispatch. See design notes in lib.rs and carts/mod.rs.
 //
-// Build the wasm as described in index.html, then serve this folder.
+// Build the wasm as described in index.html (see pre block), then serve this folder (or configure
+// your static host / Vercel rootDirectory: examples/web + ensure .wasm served as application/wasm).
 
 const WIDTH = 128;
 const HEIGHT = 128;
 const SCALE = 4; // CSS pixels per console pixel (for visibility)
 
-const PALETTE = [ // must match src/lib.rs PALETTE (0x00RRGGBB -> r,g,b)
+const PALETTE = [ // must match src/lib.rs PALETTE (0x00RRGGBB -> r,g,b). Synced via s8_ffi_palette_ptr() when possible.
   [0,0,0], [0x1D,0x2B,0x53], [0x7E,0x25,0x53], [0x00,0x87,0x51],
   [0xAB,0x52,0x36], [0x5F,0x57,0x4F], [0xC2,0xC3,0xC7], [0xFF,0xF1,0xE8],
   [0xFF,0x00,0x4D], [0xFF,0xA3,0x00], [0xFF,0xEC,0x27], [0x00,0xE4,0x36],
@@ -92,8 +93,17 @@ function setupInput(canvasEl) {
 async function loadWasm() {
   setStatus('Fetching scratch8.wasm ...');
   try {
-    const response = await fetch('scratch8.wasm');
-    if (!response.ok) throw new Error('Failed to fetch scratch8.wasm — did you copy it here after cargo build?');
+    const response = await fetch('scratch8.wasm', { cache: 'no-cache' });
+    if (!response.ok) {
+      const ct = response.headers.get('content-type') || '';
+      throw new Error('Failed to fetch scratch8.wasm (status ' + response.status + ', type ' + ct + '). ' +
+        'Check deployment rootDirectory (examples/web), file committed, and public access (no auth wall).');
+    }
+    // Optional: warn on bad MIME (Vercel/static hosts should return application/wasm for *.wasm)
+    const ct = response.headers.get('content-type') || '';
+    if (ct && !ct.includes('wasm') && !ct.includes('octet-stream') && !ct.includes('application')) {
+      console.warn('Unexpected Content-Type for wasm:', ct, '(may still work but some browsers enforce application/wasm)');
+    }
     const bytes = await response.arrayBuffer();
 
     setStatus('Instantiating wasm...');
@@ -112,14 +122,22 @@ async function loadWasm() {
       }
     }
 
+    // Pre-grow memory generously so the copy_buffer destOffset hack is reliable (avoid per-frame growth races).
+    // The FFI copy_buffer writes to a caller-chosen wasm addr; we pick near the high end after growth.
+    try { wasmMemory.grow(16); } catch (_) {} // ~1 MiB extra pages for scratch + future audio + safety
+
+    // (Optional) sync PALETTE from FFI to avoid drift (palette_ptr returns *const u32 to the 16-entry table).
+    // For v1 we keep the JS const in sync manually; future: read via DataView + update PALETTE.
+    // const palPtr = wasmInstance.exports.s8_ffi_palette_ptr();
+
     // Initial console + first demo
     wasmInstance.exports.s8_ffi_init(currentDemo);
 
     setStatus('Running (wasm OK). Use keyboard or buttons.');
     return true;
   } catch (err) {
-    console.error(err);
-    setStatus('ERROR: ' + err.message + ' — see console + build instructions above.');
+    console.error('SCRATCH-8 wasm load error:', err);
+    setStatus('ERROR: ' + (err && err.message ? err.message : err) + ' — see browser console. Ensure scratch8.wasm is present + publicly fetchable.');
     return false;
   }
 }
@@ -132,64 +150,63 @@ function switchDemo(id) {
   }
 }
 
+// Make available to inline scripts in index.html (btn3 handler etc)
+window.switchDemo = switchDemo;
+
 function renderFrame() {
   if (!wasmInstance || !ctx || !imageData) return;
 
-  const w = wasmInstance.exports.s8_ffi_width();
-  const h = wasmInstance.exports.s8_ffi_height();
+  try {
+    const w = wasmInstance.exports.s8_ffi_width();
+    const h = wasmInstance.exports.s8_ffi_height();
 
-  // Feed current input state + step the machine (this runs the real Cart logic inside wasm)
-  wasmInstance.exports.s8_ffi_update(
-    inputState.left, inputState.right, inputState.up, inputState.down,
-    inputState.z, inputState.x, inputState.mx, inputState.my
-  );
+    // Feed current input state + step the machine (this runs the real Cart logic inside wasm)
+    wasmInstance.exports.s8_ffi_update(
+      inputState.left, inputState.right, inputState.up, inputState.down,
+      inputState.z, inputState.x, inputState.mx, inputState.my
+    );
 
-  // Pull the palette-index buffer out of wasm linear memory
-  // (we also could have read the palette through s8_ffi_palette_ptr but we hardcode it here for the thin demo)
-  const bufPtr = wasmInstance.exports.s8_ffi_copy_buffer; // the fn itself
-  // We don't have direct buffer ptr in this FFI (to keep it simple and safe).
-  // Instead we use the copy helper that writes into a region we allocate in JS memory view.
-  // Allocate a scratch area in the wasm memory for the copy target? Simpler: call the copy
-  // into a region past the end of statics (fragile) or grow memory and use high addresses.
-  // Easiest thin approach: export a helper that returns the *address of the internal buffer*,
-  // but our current FFI only has the copy fn. We use an 8kB scratch we "own" by growing.
-  //
-  // For v1 we do the following robust trick: ask for a buffer copy destination that we
-  // will treat as living in the wasm memory after we force a small growth if needed.
+    // Pull the palette-index buffer out of wasm linear memory via the copy FFI.
+    // Robust version of the dest hack:
+    // - pre-grow at load (see loadWasm)
+    // - always re-read .buffer (grows detach previous)
+    // - use conservative high offset with margin
+    const pageSize = 65536;
+    const needed = (w * h) + 4096;
+    let bufLen = wasmMemory.buffer.byteLength;
+    if (bufLen < needed) {
+      const pagesNeeded = Math.ceil((needed - bufLen) / pageSize) + 3;
+      try { wasmMemory.grow(pagesNeeded); bufLen = wasmMemory.buffer.byteLength; } catch (_) {}
+    }
 
-  // Grow memory so we have a known scratch area at the *end* (after initial pages).
-  // This is a bit hacky but works without changing the Rust FFI for the absolute first web step.
-  const mem = wasmMemory.buffer;
-  let pageSize = 64 * 1024;
-  let needed = (w * h) + 1024; // safety
-  if (mem.byteLength < needed) {
-    const pagesNeeded = Math.ceil((needed - mem.byteLength) / pageSize) + 1;
-    try { wasmMemory.grow(pagesNeeded); } catch (_) {}
+    // Destination near (but safely before) the absolute end of linear memory.
+    let destOffset = bufLen - (w * h) - 256;
+    if (destOffset < 0) destOffset = 0; // fallback (unlikely)
+
+    // NOTE: s8_ffi_copy_buffer(out_ptr, len) — out_ptr is *wasm address* (i32). Must be writable in linear mem.
+    wasmInstance.exports.s8_ffi_copy_buffer(destOffset, w * h);
+
+    // Map indices through palette into the ImageData. Re-create view each frame (post-grow safety).
+    const idxView = new Uint8Array(wasmMemory.buffer, destOffset, w * h);
+    const data = imageData.data; // RGBA
+    for (let i = 0; i < w * h; i++) {
+      const col = idxView[i] & 15;
+      const rgb = PALETTE[col];
+      const o = i * 4;
+      data[o + 0] = rgb[0];
+      data[o + 1] = rgb[1];
+      data[o + 2] = rgb[2];
+      data[o + 3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    // (Optional) read frame for debug
+    // const f = wasmInstance.exports.s8_ffi_frame();
+    frameCounter++;
+  } catch (e) {
+    // Do not kill the rAF loop on transient errors (e.g. during a grow edge case).
+    console.warn('renderFrame error (continuing):', e);
   }
-
-  // Use the last 16k of current memory as destination (after growth)
-  const destOffset = wasmMemory.buffer.byteLength - (w * h) - 16;
-  // Call the FFI copy into that address inside wasm memory
-  // NOTE: s8_ffi_copy_buffer(out_ptr, len) — out_ptr is *wasm address* (i32)
-  wasmInstance.exports.s8_ffi_copy_buffer(destOffset, w * h);
-
-  // Now map the indices through palette into the ImageData
-  const idxView = new Uint8Array(wasmMemory.buffer, destOffset, w * h);
-  const data = imageData.data; // RGBA
-  for (let i = 0; i < w * h; i++) {
-    const col = idxView[i] & 15;
-    const rgb = PALETTE[col];
-    const o = i * 4;
-    data[o + 0] = rgb[0];
-    data[o + 1] = rgb[1];
-    data[o + 2] = rgb[2];
-    data[o + 3] = 255;
-  }
-  ctx.putImageData(imageData, 0, 0);
-
-  // (Optional) read frame for debug
-  // const f = wasmInstance.exports.s8_ffi_frame();
-  frameCounter++;
 }
 
 function mainLoop() {
@@ -199,6 +216,9 @@ function mainLoop() {
 
 async function start() {
   canvas = document.getElementById('canvas');
+  if (!canvas) {
+    console.error('No canvas element'); return;
+  }
   ctx = canvas.getContext('2d', { alpha: false });
 
   // Scale the internal 128x128 up for the display
@@ -211,14 +231,17 @@ async function start() {
 
   setupInput(canvas);
 
-  // Wire demo buttons
-  document.getElementById('btn0').onclick = () => switchDemo(0);
-  document.getElementById('btn1').onclick = () => switchDemo(1);
-  document.getElementById('btn2').onclick = () => switchDemo(2);
-  document.getElementById('btn-audio').onclick = () => {
-    setStatus('Web Audio stub — see s8_ffi_fill_audio in lib.rs (chiptune track + wasm-port)');
-    // Future: create AudioContext + AudioWorklet that pulls from s8_ffi_fill_audio into a sourceBuffer.
-  };
+  // Wire demo buttons (guard missing elements so we never throw before loadWasm)
+  const b0 = document.getElementById('btn0'); if (b0) b0.onclick = () => switchDemo(0);
+  const b1 = document.getElementById('btn1'); if (b1) b1.onclick = () => switchDemo(1);
+  const b2 = document.getElementById('btn2'); if (b2) b2.onclick = () => switchDemo(2);
+  const bAudio = document.getElementById('btn-audio');
+  if (bAudio) {
+    bAudio.onclick = () => {
+      setStatus('Web Audio stub — see s8_ffi_fill_audio in lib.rs (chiptune track + wasm-port)');
+      // Future: create AudioContext + AudioWorklet that pulls from s8_ffi_fill_audio into a sourceBuffer.
+    };
+  }
 
   const ok = await loadWasm();
   if (ok) {

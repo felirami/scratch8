@@ -43,11 +43,10 @@
         <button id="btn0">BOUNCER</button>
         <button id="btn1">PAINTER</button>
         <button id="btn2">PARTICLES</button>
-        <button id="btn3" title="Full chiptune engine (envelopes, vibrato, patterns, sfx)">CHIPTUNE</button>
         <span class="status" id="status">Loading wasm…</span>
       </div>
       <canvas id="canvas" width="128" height="128"></canvas>
-      <div class="hint">Arrows / WASD + Z/X (or mouse). 1/2/3/4 also switch. Real Cart logic running in WebAssembly.</div>
+      <div class="hint">Arrows / WASD + Z/X (or mouse). 1/2/3 also switch. Real Cart logic running in WebAssembly. (Chiptune demo + audio output + more carts like Pong/Snake are desktop-only for now.)</div>
     </div>
 
     <div class="section">
@@ -66,9 +65,9 @@
           <div>Gravity fountain. Hold Z/X or wait — the engine spawns and the particles have real velocity + decay.</div>
         </div>
         <div class="game">
-          <h3>Chiptune Demo ★</h3>
+          <h3>Chiptune Demo ★ (desktop)</h3>
           <div>16-step multi-channel pattern (pulse lead + bass + drums) at 128 BPM + vibrato + interactive sfx. The full PSG (4 channels, envelopes, LFSR noise, slide, play_pattern) is running live inside the wasm.</div>
-          <div style="margin-top:6px;font-size:11px;color:#666">Best experienced in the desktop build (real cpal output + full sfx bank on Z/X).</div>
+          <div style="margin-top:6px;font-size:11px;color:#666">Full audio + this demo best in <code>cargo run --release --features full</code> (cpal output).</div>
         </div>
       </div>
       <p class="hint">Pong and Snake are also in the repo as complete from-scratch examples (AABB physics, grid snake, btnp direction buffering, scoring, win conditions — all using only the public Console + Cart API). Run them locally with <code>cargo run --example pong</code>.</p>
@@ -80,9 +79,10 @@
 # Desktop (full chiptune audio + .s8 export on E/S)
 cargo run --release --features full
 
-# Build your own carts
-cargo run --example pong
-cargo run --example snake
+# Build web demo wasm (then commit examples/web/scratch8.wasm or configure your host)
+rustup target add wasm32-unknown-unknown
+cargo build --target wasm32-unknown-unknown --features wasm --release --lib
+cp target/wasm32-unknown-unknown/release/scratch8.wasm examples/web/
 
 # Or just the core (no_std / embedded friendly)
 cargo build --target thumbv7em-none-eabihf --no-default-features
@@ -109,15 +109,5 @@ cargo build --target thumbv7em-none-eabihf --no-default-features
   </div>
 
   <script src="runner.js"></script>
-  <script>
-    // Tiny enhancement: make the 4th button actually try demo id 3 (Chiptune) if the wasm supports it
-    (function(){
-      const b = document.getElementById('btn3');
-      if (b) b.onclick = () => {
-        if (window.switchDemo) window.switchDemo(3);
-        else if (typeof switchDemo === 'function') switchDemo(3);
-      };
-    })();
-  </script>
 </body>
 </html>
